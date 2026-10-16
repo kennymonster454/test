@@ -9,32 +9,37 @@
 ---------------------------------------------------------------------------------*/
 
 #include <nds.h>
-#include <stdio.h>
 #include <stdlib.h>
 
-#define SCREEN_W 256
-#define SCREEN_H 192
-#define CHUNK_W 96
-#define MAX_PLATFORMS 12
+#define W 256
+#define H 192
+#define CHUNK 80
 
 static u16* screen;
 
-struct Platform {
-    int x, y, w;
-};
-
-static Platform platforms[MAX_PLATFORMS];
-
-static int playerX = 24;
-static int playerY = 100;
+static int playerX = 30;
+static int playerY = 130;
 static int velocityY = 0;
 static int cameraX = 0;
-static int worldChunk = -1;
 static int powers = 0;
-static int score = 0;
 static bool grounded = false;
 
-static unsigned int hashValue(unsigned int n) {
+static u16 rgb(int r, int g, int b) {
+    return RGB15(r, g, b);
+}
+
+static void pixel(int x, int y, u16 c) {
+    if (x >= 0 && x < W && y >= 0 && y < H)
+        screen[y * W + x] = c;
+}
+
+static void box(int x, int y, int w, int h, u16 c) {
+    for (int j = 0; j < h; j++)
+        for (int i = 0; i < w; i++)
+            pixel(x + i, y + j, c);
+}
+
+static unsigned int randomWorld(unsigned int n) {
     n ^= n >> 16;
     n *= 0x7feb352d;
     n ^= n >> 15;
@@ -43,168 +48,121 @@ static unsigned int hashValue(unsigned int n) {
     return n;
 }
 
-static u16 color(int r, int g, int b) {
-    return RGB15(r >> 3, g >> 3, b >> 3);
-}
-
-static void pixel(int x, int y, u16 c) {
-    if (x < 0 || x >= SCREEN_W ||
-        y < 0 || y >= SCREEN_H) return;
-
-    screen[y * SCREEN_W + x] = c;
-}
-
-static void rect(int x, int y, int w, int h, u16 c) {
-    for (int j = 0; j < h; j++)
-        for (int i = 0; i < w; i++)
-            pixel(x + i, y + j, c);
-}
-
-static void line(int x1, int y1, int x2, int y2, u16 c) {
-    int dx = abs(x2 - x1);
-    int dy = abs(y2 - y1);
-    int sx = x1 < x2 ? 1 : -1;
-    int sy = y1 < y2 ? 1 : -1;
-    int err = dx - dy;
-
-    while (1) {
-        pixel(x1, y1, c);
-        if (x1 == x2 && y1 == y2) break;
-
-        int e2 = err * 2;
-        if (e2 > -dy) {
-            err -= dy;
-            x1 += sx;
-        }
-        if (e2 < dx) {
-            err += dx;
-            y1 += sy;
-        }
-    }
-}
-
 static int platformY(int chunk) {
-    if (chunk < 0) return 145;
-
-    unsigned int h = hashValue((unsigned int)chunk + 12345);
-    return 112 + (int)(h % 39);
-}
-
-static int platformX(int chunk) {
-    return chunk * CHUNK_W + 8;
+    if (chunk <= 0) return 150;
+    return 125 + randomWorld(chunk + 123u) % 20;
 }
 
 static int platformWidth(int chunk) {
-    unsigned int h = hashValue((unsigned int)chunk + 6789);
-    return 62 + (int)(h % 19);
+    return 52 + randomWorld(chunk + 456u) % 20;
 }
 
-static void drawBackground() {
-    rect(0, 0, SCREEN_W, SCREEN_H, color(25, 30, 60));
+static int platformX(int chunk) {
+    return chunk * CHUNK + 8;
+}
 
-    for (int i = 0; i < 35; i++) {
-        int x = (i * 73 + 19) % SCREEN_W;
-        int y = (i * 41 + 7) % 95;
-        pixel(x, y, color(220, 225, 255));
-    }
+static void drawCrystal(int x, int y, int type) {
+    u16 c1 = rgb(0, 31, 31);
+    u16 c2 = rgb(31, 31, 8);
 
-    for (int x = 0; x < SCREEN_W; x += 64) {
-        int wx = x + cameraX;
-        int hills = 135 + (int)(hashValue(wx / 32) % 30);
-        line(x, hills, x + 32, hills - 20,
-             color(35, 50, 80));
-        line(x + 32, hills - 20, x + 64, hills,
-             color(35, 50, 80));
-    }
+    if (type % 4 == 0) c1 = rgb(31, 5, 8);
+    if (type % 4 == 1) c1 = rgb(4, 20, 31);
+    if (type % 4 == 2) c1 = rgb(31, 25, 0);
+    if (type % 4 == 3) c1 = rgb(18, 4, 31);
+
+    box(x + 2, y + 2, 7, 8, c1);
+    pixel(x + 5, y, c2);
+    pixel(x + 3, y + 1, c2);
+    pixel(x + 7, y + 1, c2);
+    box(x + 4, y + 3, 3, 4, c2);
+    pixel(x + 5, y + 10, c1);
 }
 
 static void drawPlayer(int x, int y) {
     // Shadow
-    rect(x + 1, y + 15, 10, 2, color(10, 12, 25));
+    box(x - 1, y + 15, 14, 2, rgb(4, 7, 14));
 
-    // Legs
-    rect(x + 2, y + 10, 3, 5, color(245, 180, 65));
-    rect(x + 7, y + 10, 3, 5, color(245, 180, 65));
+    // Boots
+    box(x + 1, y + 12, 5, 4, rgb(31, 12, 2));
+    box(x + 7, y + 12, 5, 4, rgb(31, 12, 2));
 
-    // Body
-    rect(x + 1, y + 4, 10, 8, color(30, 200, 235));
+    // Bright blue outfit
+    box(x + 1, y + 5, 11, 8, rgb(2, 12, 31));
+    box(x + 3, y + 6, 7, 5, rgb(0, 25, 31));
 
-    // Head
-    rect(x + 2, y, 8, 6, color(255, 220, 175));
+    // Skin and hair
+    box(x + 2, y, 9, 7, rgb(31, 23, 15));
+    box(x + 1, y, 11, 3, rgb(8, 4, 2));
 
     // Eyes
-    pixel(x + 7, y + 2, color(10, 10, 20));
+    pixel(x + 8, y + 3, rgb(0, 0, 0));
 }
 
-static void drawPower(int x, int y, int id) {
-    u16 c;
+static void drawScene(void) {
+    // Blue sky
+    box(0, 0, W, H, rgb(8, 17, 31));
 
-    switch (id % 6) {
-        case 0: c = color(255, 70, 70); break;
-        case 1: c = color(70, 220, 255); break;
-        case 2: c = color(255, 230, 50); break;
-        case 3: c = color(180, 70, 255); break;
-        case 4: c = color(70, 255, 120); break;
-        default: c = color(255, 140, 35); break;
+    // Stars
+    for (int i = 0; i < 45; i++) {
+        int x = (i * 67 + 19) % W;
+        int y = (i * 31 + 7) % 95;
+        pixel(x, y, rgb(31, 31, 25));
     }
 
-    pixel(x + 4, y, c);
-    rect(x + 2, y + 1, 5, 5, c);
-    pixel(x + 4, y + 6, color(255, 255, 255));
-}
+    // Distant mountains
+    for (int x = 0; x < W; x += 32) {
+        int y = 105 + randomWorld((x + cameraX) / 16) % 25;
+        box(x, y, 32, H - y, rgb(5, 8, 22));
+        box(x + 8, y - 5, 16, 5, rgb(7, 11, 27));
+    }
 
-static void drawWorld() {
-    drawBackground();
+    // Infinite platforms
+    int first = cameraX / CHUNK - 1;
 
-    int first = cameraX / CHUNK_W - 1;
-    int last = first + 5;
+    for (int c = first; c < first + 6; c++) {
+        if (c < 0) continue;
 
-    for (int chunk = first; chunk <= last; chunk++) {
-        if (chunk < 0) continue;
-
-        int wx = platformX(chunk);
+        int wx = platformX(c);
         int sx = wx - cameraX;
-        int py = platformY(chunk);
-        int pw = platformWidth(chunk);
+        int py = platformY(c);
+        int pw = platformWidth(c);
 
-        rect(sx, py, pw, 8, color(115, 75, 45));
-        rect(sx, py, pw, 3, color(60, 235, 105));
+        // Platform underside
+        box(sx, py, pw, 10, rgb(15, 8, 25));
 
-        // Each world chunk has its own generated power.
-        int powerWorldX = wx + pw / 2;
-        int powerScreenX = powerWorldX - cameraX;
-        int powerY = py - 10;
+        // Grass top
+        box(sx, py, pw, 4, rgb(4, 31, 10));
+        box(sx, py, pw, 2, rgb(12, 31, 14));
 
-        // A collected power disappears for this session.
-        // Save-file persistence is not implemented yet.
-        unsigned int powerID = hashValue((unsigned int)chunk);
-        if (powerID % 100000u != 0u) {
-            drawPower(powerScreenX, powerY, powerID % 6);
-        }
+        // Glowing power crystal
+        drawCrystal(sx + pw / 2 - 5, py - 15, c);
     }
 
+    // Player
     drawPlayer(playerX - cameraX, playerY);
 
-    rect(0, 0, 256, 23, color(12, 16, 35));
-    // HUD text is drawn separately using the DS console.
+    // Colorful HUD strip
+    box(0, 0, W, 5, rgb(0, 20, 25));
+    box(0, 0, 45, 3, rgb(0, 31, 20));
+    box(45, 0, 45, 3, rgb(0, 20, 31));
+    box(90, 0, 45, 3, rgb(25, 10, 31));
+    box(135, 0, 45, 3, rgb(31, 20, 0));
+    box(180, 0, 76, 3, rgb(31, 5, 12));
+
+    // Power meter
+    for (int i = 0; i < powers % 20; i++)
+        box(5 + i * 7, 10, 5, 4, rgb(31, 25, 0));
 }
 
 int main(void) {
-    videoSetMode(MODE_5_2D | DISPLAY_BG3_ACTIVE);
+    videoSetMode(MODE_5_2D);
     vramSetBankA(VRAM_A_MAIN_BG);
 
     int bg = bgInit(
-        3, BgType_Bmp16, BgSize_B16_256x256, 0, 0
+        2, BgType_Bmp16, BgSize_B16_256x256, 0, 0
     );
 
     screen = (u16*)bgGetGfxPtr(bg);
-
-    consoleInit(
-        0, 0, BgType_Text4bpp,
-        BgSize_T_256x256, 31, 0, true, true
-    );
-
-    iprintf("POWERBOUND: INFINITE");
 
     while (1) {
         swiWaitForVBlank();
@@ -213,85 +171,60 @@ int main(void) {
         int held = keysHeld();
         int pressed = keysDown();
 
+        // Movement
         if (held & KEY_LEFT) playerX -= 2;
         if (held & KEY_RIGHT) playerX += 2;
 
+        // Jump
         if ((pressed & KEY_A) && grounded) {
-            velocityY = -7;
+            velocityY = -8;
             grounded = false;
         }
 
-        // Gravity and jumping
-        velocityY += 1;
+        // Gravity
+        velocityY++;
         if (velocityY > 7) velocityY = 7;
         playerY += velocityY;
-
         grounded = false;
 
-        // Land on platforms when falling.
-        int chunk = (playerX + 6) / CHUNK_W;
+        // Platform collision
+        int current = playerX / CHUNK;
 
-        for (int c = chunk - 1; c <= chunk + 1; c++) {
+        for (int c = current - 1; c <= current + 1; c++) {
             if (c < 0) continue;
 
             int px = platformX(c);
             int py = platformY(c);
             int pw = platformWidth(c);
 
-            if (playerX + 11 > px &&
+            if (playerX + 12 > px &&
                 playerX < px + pw &&
-                playerY + 15 >= py &&
-                playerY + 15 <= py + 8 &&
+                playerY + 16 >= py &&
+                playerY + 16 <= py + 9 &&
                 velocityY >= 0) {
-                playerY = py - 15;
+                playerY = py - 16;
                 velocityY = 0;
                 grounded = true;
             }
         }
 
-        // Keep the camera following the player.
-        if (playerX - cameraX > 175)
-            cameraX = playerX - 175;
-
-        if (playerX - cameraX < 35)
-            cameraX = playerX - 35;
-
-        // Generate a power-up for each world chunk.
-        int currentChunk = (playerX + 6) / CHUNK_W;
-
-        if (currentChunk != worldChunk && currentChunk >= 0) {
-            worldChunk = currentChunk;
+        // Fall back to the starting area
+        if (playerY > 190) {
+            playerY = 100;
+            velocityY = 0;
+            cameraX = playerX;
         }
 
-        // Pick up a power by touching its platform's crystal.
-        for (int c = 0; c <= currentChunk + 1; c++) {
-            int px = platformX(c);
-            int py = platformY(c);
-            int pw = platformWidth(c);
+        // Camera follows the player
+        if (playerX - cameraX > 170)
+            cameraX = playerX - 170;
 
-            int crystalX = px + pw / 2;
-            int crystalY = py - 10;
+        if (playerX - cameraX < 40)
+            cameraX = playerX - 40;
 
-            if (playerX + 11 > crystalX &&
-                playerX < crystalX + 7 &&
-                playerY < crystalY + 7 &&
-                playerY + 15 > crystalY) {
-                // Placeholder counter; unique collection tracking
-                // and permanent saving need a save system.
-            }
-        }
-
-        drawWorld();
-
-        iprintf("\x1b[1;0HPOWERBOUND: INFINITE     ");
-        iprintf("\x1b[2;0HWorld: %d   Powers: %d   ",
-                cameraX / CHUNK_W, powers);
-        iprintf("\x1b[3;0HA: Jump  LEFT/RIGHT: Move   ");
-
-        bgUpdate();
+        drawScene();
     }
 
     return 0;
 }
-
 
