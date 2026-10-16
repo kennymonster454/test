@@ -1,0 +1,24 @@
+name: Build Powerbound Infinite
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkitarm:20241104
+
+    steps:
+      - name: Get source code
+        uses: actions/checkout@v4
+
+      - name: Build Nintendo DS game
+        run: make
+
+      - name: Save NDS file
+        uses: actions/upload-artifact@v4
+        with:
+          name: Powerbound-Infinite
+          path: "*.nds"
+          if-no-files-found: error
