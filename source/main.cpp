@@ -8,45 +8,56 @@
 
 ---------------------------------------------------------------------------------*/
 #include <nds.h>
-
 #include <stdio.h>
+#include <fat.h>
 
-volatile int frame = 0;
+int playerX = 20;
+int playerY = 10;
+int worldX = 0;
+int powerCount = 0;
 
-//---------------------------------------------------------------------------------
-void Vblank() {
-//---------------------------------------------------------------------------------
-	frame++;
-}
-	
-//---------------------------------------------------------------------------------
-int main(void) {
-//---------------------------------------------------------------------------------
-	touchPosition touchXY;
+int main() {
+    consoleDemoInit();
 
-	irqSet(IRQ_VBLANK, Vblank);
+    bool saveReady = fatInitDefault();
 
-	consoleDemoInit();
-	
-	iprintf("      Hello DS dev'rs\n");
-	iprintf("     \x1b[32mwww.devkitpro.org\n");
-	iprintf("   \x1b[32;1mwww.drunkencoders.com\x1b[39m");
- 
-	while(1) {
-	
-		swiWaitForVBlank();
-		scanKeys();
-		int keys = keysDown();
-		if (keys & KEY_START) break;
+    iprintf("POWERBOUND: INFINITE\n");
+    iprintf("----------------------\n");
+    iprintf("Infinite World\n");
+    iprintf("Move: D-pad\n");
+    iprintf("Collect powers: A\n\n");
 
-		touchRead(&touchXY);
+    while (1) {
+        scanKeys();
+        int keys = keysDown();
 
-		// print at using ansi escape sequence \x1b[line;columnH 
-		iprintf("\x1b[10;0HFrame = %d",frame);
-		iprintf("\x1b[16;0HTouch x = %04X, %04X\n", touchXY.rawx, touchXY.px);
-		iprintf("Touch y = %04X, %04X\n", touchXY.rawy, touchXY.py);		
-	
-	}
+        if (keys & KEY_LEFT)  playerX--;
+        if (keys & KEY_RIGHT) playerX++;
+        if (keys & KEY_UP)    playerY--;
+        if (keys & KEY_DOWN)  playerY++;
 
-	return 0;
+        if (playerX < 0) {
+            playerX = 30;
+            worldX--;
+        }
+
+        if (playerX > 30) {
+            playerX = 0;
+            worldX++;
+        }
+
+        if (keys & KEY_A) {
+            powerCount++;
+        }
+
+        iprintf("\x1b[8;0HWorld: %d   ", worldX);
+        iprintf("\x1b[10;0HPlayer: %d, %d   ", playerX, playerY);
+        iprintf("\x1b[12;0HPowers: %d   ", powerCount);
+        iprintf("\x1b[15;0HSave support: %s   ",
+                saveReady ? "Ready" : "Unavailable");
+
+        swiWaitForVBlank();
+    }
+
+    return 0;
 }
